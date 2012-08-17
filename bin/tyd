@@ -1,0 +1,139 @@
+#!/usr/bin/perl
+
+use 5.14.0;
+use strict;
+use warnings;
+use Getopt::Long qw(:config no_ignore_case bundling);
+
+use lib "../lib";
+use Archive::Tyd;
+
+my %o = (
+	create    => 0,     # -c
+	add       => 0,     # -a
+	remove    => 0,     # -r
+	extract   => 0,     # -x
+	list      => 0,     # -l
+	cat       => 0,     # --cat
+	verbose   => 0,     # -v
+	help      => 0,     # --help
+	algorithm => '',    # --algorithm
+	checksum  => 'SHA1', # --checksum
+);
+GetOptions (
+	'create|c'      => \$o{create},
+	'extract|x'     => \$o{extract},
+	'add|a'         => \$o{add},
+	'remove|r'      => \$o{remove},
+	'list|l'        => \$o{list},
+	'cat'           => \$o{cat},
+	'algorithm|A=s' => \$o{algorithm},
+	'verbose|v'     => \$o{verbose},
+	'help|h|?'      => \$o{help},
+	'checksum=s'    => \$o{checksum},
+);
+
+if (scalar(@ARGV) == 0) {
+	usage();
+}
+my $archive = shift(@ARGV);
+my @files   = @ARGV;
+
+# Error checking.
+if ($o{create} && $o{extract}) {
+	error("Can't use -c and -x at the same time.");
+} elsif ($o{create} && ($o{add} || $o{remove})) {
+	error("Can't use -c in combination with -a or -r");
+} elsif ($o{extract} && ($o{add} || $o{remove})) {
+	error("Can't use -x in combination with -a or -r");
+}
+
+# Creating?
+if ($o{create}) {
+	if (scalar(@files) == 0) {
+		error("Must provide a list of files to add.");
+	}
+
+	my $tyd = Archive::Tyd->new(
+		debug => $o{verbose},
+	);
+
+	# Using an algorithm?
+	if ($o{algorithm}) {
+		my ($name, $args) = split(/=/, $o{algorithm}, 2);
+		print "A: $o{algorithm}\n";
+		print "name: $name; arg: $args\n";
+		$tyd->algorithm($name, $args);
+	}
+
+	foreach my $f (@files) {
+		my $aname = $f;
+		$aname = "/$aname" unless $aname =~ /^\//;
+		$tyd->add_file($f => $aname) or error($tyd->error);
+	}
+
+	$tyd->save($archive, checksum => $o{checksum}) or error($tyd->error);
+}
+else {
+	# Everything else requires an existing Tyd archive.
+	my $tyd = Archive::Tyd->new (
+		debug => $o{verbose},
+	);
+
+	# Using an algorithm?
+	if ($o{algorithm}) {
+		my ($name, $args) = split(/=/, $o{algorithm}, 2);
+		$tyd->algorithm($name, $args);
+	}
+
+	$tyd->load($archive);
+
+	if ($o{list}) {
+		# List the contents.
+		my @files = $tyd->list();
+		print join("\n", @files), "\n";
+	} elsif ($o{extract}) {
+		# Extract all contents.
+		$tyd->extract();
+	} elsif ($o{add}) {
+		# Add additional files.
+		foreach my $f (@files) {
+			my $aname = $f;
+			$aname = "/$aname" unless $aname =~ /^\//;
+			$tyd->add_file($f => $aname) or error($tyd->error);
+		}
+
+		# Save the archive. Use its original checksum algorithm.
+		$tyd->save($archive) or error($tyd->error);
+	} elsif ($o{remove}) {
+		# Removing files from archive.
+		foreach my $f (@files) {
+			my $aname = $f;
+			$aname = "/$aname" unless $aname =~ /^\//;
+			$tyd->remove_file($aname) or error($tyd->error);
+		}
+
+		$tyd->save($archive);
+	} elsif ($o{cat}) {
+		# Cat the files.
+		binmode(STDOUT); # Just in case.
+		foreach my $file (@files) {
+			my $aname = $file;
+			$aname = "/$aname" unless $aname =~ /^\//;
+			print $tyd->cat($aname);
+		}
+	} else {
+		error("Unsupported action.");
+	}
+}
+
+sub usage {
+	print "Usage: tyd [-cxl --cat] <file.tyd> [files...]\n"
+		. "See `tyd --help` for help.\n";
+	exit(1);
+}
+
+sub error {
+	say shift;
+	exit(1);
+}
