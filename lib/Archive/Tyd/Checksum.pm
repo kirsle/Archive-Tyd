@@ -25,6 +25,10 @@ the archive.
 
 You must override the following methods.
 
+=head2 string name ()
+
+This should return the algorithm's name, e.g. C<SHA1>.
+
 =head2 string digest (filehandle)
 
 This should take a file handle and return a checksum hash based on it.
@@ -49,6 +53,7 @@ sub new {
 }
 
 # You must override these!
+sub name { ... }
 sub digest { ... }
 sub verify { ... }
 

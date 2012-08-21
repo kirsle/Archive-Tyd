@@ -49,7 +49,6 @@ sub new {
 	my $file;
 	if (scalar(@_) % 2) {
 		$file = shift(@_);
-		print "FILE: $file\n";
 	}
 
 	# Get any hash args.
@@ -58,7 +57,7 @@ sub new {
 	my $self = {
 		debug     => $args{debug} || 0,
 		filename  => $file,
-		checksum  => "SHA1", # Default checksumming algorithm.
+		checksum  => undef,  # Checksumming algorithm we're using.
 		algorithm => undef,  # File mangling algorithm we're using.
 		headers   => {},     # Archive headers
 		table     => {},     # File table
@@ -93,52 +92,46 @@ sub d {
 	print STDERR $msg, "\n";
 }
 
-=head2 void set_handler (string event => object, ...)
+=head2 void checksum_handler (algorithm)
 
-Set a handler for Archive::Tyd events. Handlers enable the Tyd algorithm to be
-very extensible, for example by allowing custom checksum algorithms to be used.
-See L<"HANDLERS"> for a list of supported handlers.
+Load an algorithm for Archive::Tyd to use for calculating checksums. See
+L<"CHECKSUMS">. Here, C<algorithm> should either be the name of a checksum
+algorithm, or a new instance of an algorithm handler (one that extends
+L<Archive::Tyd::Checksum>).
 
-Multiple handlers may be set in one call.
+If the algorithm provided is a string and it doesn't contain the characters
+C<::> anywhere, it will be assumed to be a built in algorithm under the
+C<Archive::Tyd::Checksum::> namespace. Otherwise, you should provide the name
+of a Perl package.
 
 =cut
 
-sub set_handler {
-	my ($self, %handlers) = @_;
+sub checksum_handler {
+	my ($self, $name) = @_;
+	$self->d("Using checksum algorithm $name");
 
-	foreach my $event (keys %handlers) {
-		$self->d("Setting event handler for: $event");
-		if ($event =~ /_/) {
-			my ($what,$is) = split(/_/, $event, 2);
-			$self->{handlers}->{$what}->{$is} = $handlers{$event};
-		}
-		else {
-			$self->{handlers}->{$event} = $handlers{$event};
-		}
+	# Is it an object?
+	if (ref($name)) {
+		# Use it straight away.
+		$self->{checksum} = $name;
+		return;
 	}
 
-	return 1;
-}
-
-# data _event (string event_name, args...)
-sub _event {
-	my ($self, $event, @args) = @_;
-
-	if ($event =~ /_/) {
-		my ($what,$is) = split(/_/, $event, 2);
-
-		# Handlers with an _ in their name must be classes. So the first arg
-		# is a class method to call.
-		my $method = shift(@args);
-		return $self->{handlers}->{$what}->{$is}->$method(@args);
-	}
-	else {
-		if (ref($self->{handlers}->{$event}) eq "CODE") {
-			return $self->{handlers}->{$event}->(@args);
-		}
+	# It's a string. Is it a fully qualified package?
+	if ($name =~ /::/) {
+		my $fname = $name;
+		$fname =~ s/::/\//g;
+		require "$fname.pm";
+		$self->{checksum} = $name->new();
+		return;
 	}
 
-	return $self->error("$event: no such event handler exists.");
+	# It must be one of our built-ins then.
+	my $fname = "Archive/Tyd/Checksum/$name.pm";
+	my $ns    = "Archive::Tyd::Checksum::$name";
+	require $fname;
+	$self->{checksum} = $ns->new();
+	return;
 }
 
 =head2 void algorithm (algorithm[, args...])
@@ -187,6 +180,40 @@ sub algorithm {
 	require $fname;
 	$self->{algorithm} = $ns->new(@args);
 	$self->{headers}->{algorithm} = $self->{algorithm}->name;
+}
+
+=head2 data header (string header[, string value])
+
+Get or set a header on the archive. Standard headers include C<name>,
+C<packager>, and C<algorithm> (but you should use C<algorithm()> to change
+that header to make sure the algorithm handler gets loaded).
+
+=cut
+
+sub header {
+	my ($self, $name, $value) = @_;
+
+	# Setting a header?
+	if (defined $value) {
+		# Don't let them change the algorithm.
+		if ($name eq "algorithm") {
+			return $self->error("You must use algorithm() instead of header() to change the algorithm.");
+		}
+		$self->{headers}->{$name} = $value;
+	}
+
+	return $self->{headers}->{$name};
+}
+
+=head2 hashref headers ()
+
+Retrieve all the headers from the archive.
+
+=cut
+
+sub headers {
+	my $self = shift;
+	return $self->{headers};
 }
 
 =head2 bool load ([string filename || filehandle fh])
@@ -254,13 +281,10 @@ sub load {
 	$self->_autoload_checksum($algorithm);
 
 	# Checksum it.
-	my $ok = $self->_event("checksum_$algorithm", "verify", $hash, $fh);
+	my $ok = $self->{checksum}->verify($hash, $fh);
 	if (not $ok) {
 		return $self->error("$file: checksum test has failed.");
 	}
-
-	# Save the checksum.
-	$self->{checksum} = $algorithm;
 
 	# Reset the file handle for reading.
 	seek($fh, 0, 0);
@@ -567,7 +591,7 @@ sub save {
 	my $fh;
 
 	# Write options.
-	my $algo = $opts{checksum} || $self->{checksum} || "SHA1";
+	my $algo = $opts{checksum} || $self->{checksum}->name() || "SHA1";
 
 	# Load the checksum handler to be sure we have it.
 	$self->_autoload_checksum($algo);
@@ -660,7 +684,7 @@ sub save {
 		# Populate file attributes in the table.
 		my @stat = stat($disk);
 		$tab->{index}    = $index++; # Choose the index in the [content] section.
-		$tab->{checksum} = $self->_event("checksum_$algo", "digest", $ah) or return $self->error();
+		$tab->{checksum} = $self->{checksum}->digest($ah) or return $self->error();
 		$tab->{atime}    = $stat[8];
 		$tab->{mtime}    = $stat[9];
 		$tab->{ctime}    = $stat[10];
@@ -708,7 +732,7 @@ sub save {
 
 		# Populate file attributes in the table.
 		$tab->{index}    = $index++; # Choose the index in the [content] section.
-		$tab->{checksum} = $self->_event("checksum_$algo", "digest", $content) or return $self->error();
+		$tab->{checksum} = $self->{checksum}->digest($content) or return $self->error();
 
 		# Get the original file size.
 		my $fsize = length($content);
@@ -748,7 +772,7 @@ sub save {
 
 	# Generate the checksum.
 	seek($th, 0, 0);
-	my $hash = $self->_event("checksum_$algo", "digest", $th) or return $self->error();
+	my $hash = $self->{checksum}->digest($th) or return $self->error();
 	$self->d("Calculated checksum: $hash");
 
 	# Write the final archive.
@@ -786,24 +810,6 @@ sub error {
 
 	return $self->{error};
 }
-
-=head1 HANDLERS
-
-These are the supported event handlers:
-
-=over 4
-
-=item checksum_C<algorithm>
-
-Define a checksum handler for a particular C<algorithm> (for example:
-C<checksum_MD5>, C<checksum_SHA256>). Example implementation:
-
-  $tyd->set_handler (checksum_MD5 => MyChecksum::MD5->new());
-
-Archive::Tyd itself supports the algorithms C<MD5>, C<SHA1> and
-C<SHA256>. You may override them if you want to.
-
-=back
 
 =head1 ALGORITHMS
 
@@ -894,17 +900,17 @@ sub trim {
 	return $line;
 }
 
-# Automatically load a checksum handler.
+# Automatically load a checksum handler by name, e.g. SHA1.
 sub _autoload_checksum {
 	my ($self, $checksum) = @_;
 
-	# Not if we already have one.
-	return if exists $self->{handlers}->{checksum}->{$checksum};
+	# Not if we're already using this one.
+	if (ref($self->{checksum}) && $self->{checksum}->name() eq $checksum) {
+		return;
+	}
 
-	my $cs_file = "Archive/Tyd/Checksum/$checksum.pm";
-	my $cs_ns   = "Archive::Tyd::Checksum::$checksum";
-	require $cs_file;
-	$self->set_handler ("checksum_$checksum" => $cs_ns->new());
+	# Apply the checksum handler.
+	$self->checksum_handler($checksum);
 }
 
 1;

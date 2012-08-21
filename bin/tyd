@@ -9,17 +9,19 @@ use lib "../lib";
 use Archive::Tyd;
 
 my %o = (
-	create    => 0,     # -c
-	add       => 0,     # -a
-	remove    => 0,     # -r
-	extract   => 0,     # -x
-	list      => 0,     # -l
-	cat       => 0,     # --cat
-	verbose   => 0,     # -v
-	help      => 0,     # --help
-	algorithm => '',    # --algorithm
+	create    => 0,      # -c
+	add       => 0,      # -a
+	remove    => 0,      # -r
+	extract   => 0,      # -x
+	list      => 0,      # -l
+	cat       => 0,      # --cat
+	info      => 0,      # --i
+	verbose   => 0,      # -v
+	help      => 0,      # --help
+	algorithm => '',     # -A
 	checksum  => 'SHA1', # --checksum
 );
+my @header;              # --header
 GetOptions (
 	'create|c'      => \$o{create},
 	'extract|x'     => \$o{extract},
@@ -27,8 +29,10 @@ GetOptions (
 	'remove|r'      => \$o{remove},
 	'list|l'        => \$o{list},
 	'cat'           => \$o{cat},
+	'info|i'        => \$o{info},
 	'algorithm|A=s' => \$o{algorithm},
 	'verbose|v'     => \$o{verbose},
+	'header|H=s'    => \@header,
 	'help|h|?'      => \$o{help},
 	'checksum=s'    => \$o{checksum},
 );
@@ -58,11 +62,12 @@ if ($o{create}) {
 		debug => $o{verbose},
 	);
 
+	# Handle header changes.
+	set_headers($tyd, @header);
+
 	# Using an algorithm?
 	if ($o{algorithm}) {
 		my ($name, $args) = split(/=/, $o{algorithm}, 2);
-		print "A: $o{algorithm}\n";
-		print "name: $name; arg: $args\n";
 		$tyd->algorithm($name, $args);
 	}
 
@@ -80,13 +85,16 @@ else {
 		debug => $o{verbose},
 	);
 
+	# Handle header changes.
+	set_headers($tyd, @header);
+
 	# Using an algorithm?
 	if ($o{algorithm}) {
 		my ($name, $args) = split(/=/, $o{algorithm}, 2);
 		$tyd->algorithm($name, $args);
 	}
 
-	$tyd->load($archive);
+	$tyd->load($archive) or error($tyd->error);
 
 	if ($o{list}) {
 		# List the contents.
@@ -124,6 +132,15 @@ else {
 		}
 	} else {
 		error("Unsupported action.");
+	}
+}
+
+sub set_headers {
+	my ($tyd, @headers) = @_;
+
+	foreach my $header (@headers) {
+		my ($what,$is) = split(/=/, $header, 2);
+		$tyd->header($what => $is);
 	}
 }
 

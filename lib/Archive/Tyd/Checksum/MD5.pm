@@ -10,6 +10,8 @@ use base qw(Archive::Tyd::Checksum);
 
 our $VERSION = "1.00";
 
+sub name () { "MD5" }
+
 sub digest {
 	my ($self, $fh) = @_;
 
