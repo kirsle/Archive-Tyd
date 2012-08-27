@@ -1,3 +1,0 @@
-This is file number one.
-
-It is a very small file.
