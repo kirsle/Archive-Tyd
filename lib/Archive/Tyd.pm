@@ -67,8 +67,9 @@ sub new {
 			remove_file => [], # Files to be removed from archive
 			add_content => [], # Files by content to add
 		},
-		fh        => undef,  # File handle
-		error     => undef,  # Last error message
+		custom_block => {},     # Custom blocks in the archive file
+		fh           => undef,  # File handle
+		error        => undef,  # Last error message
 	};
 	bless ($self, $class);
 
@@ -80,7 +81,7 @@ sub new {
 
 	# Given a file?
 	if ($self->{filename} && -e $self->{filename}) {
-		$self->load() or warn $self->{error};
+		$self->load() or return undef;
 	}
 
 	return $self;
@@ -216,6 +217,36 @@ sub headers {
 	return $self->{headers};
 }
 
+=head2 string custom_block (string block_name[, string value])
+
+Get or set the value of a custom block from the archive. Custom blocks are
+useful for including a signature in the archive. They can include any
+arbitrary data.
+
+You cannot set a block named C<header>, C<content>, or any block that begins
+with the word C<file:>.
+
+=cut
+
+sub custom_block {
+	my ($self, $name, $data) = @_;
+
+	# Setting the block?
+	if (defined $data) {
+		if ($name =~ /^(header|content|file:.*?)$/) {
+			return $self->error("Block name '$name' is a reserved block.");
+		}
+
+		$self->{custom_block}->{$name} = [ split(/\x0A/, $data) ]
+	}
+
+	if (exists $self->{custom_block}->{$name}) {
+		return join("\x0A", @{$self->{custom_block}->{$name}});
+	}
+
+	return undef;
+}
+
 =head2 bool load ([string filename || filehandle fh])
 
 Load a Tyd archive from a file or filehandle. If you specified an existing
@@ -323,6 +354,13 @@ sub load {
 
 			$table->{$fn}->{$what} = $is;
 		}
+		else {
+			# Custom block.
+			if (!exists $self->{custom_block}->{$section}) {
+				$self->{custom_block}->{$section} = [];
+			}
+			push @{$self->{custom_block}->{$section}}, $line;
+		}
 	}
 
 	# Save the information we found.
@@ -404,6 +442,7 @@ sub add_file {
 		elsif ($add{$file} =~ /[^A-Za-z0-9\_\.\-\/\: \@\+\#\$]/) {
 			return $self->error("$add{$file}: contains invalid characters.");
 		}
+		$self->d("Add to add_file queue: $file => $add{$file}");
 		push @{$self->{pending}->{add_file}}, [ $file, $add{$file} ];
 	}
 
@@ -577,11 +616,23 @@ call any event handlers for encryption of file contents, etc.
 If a file mangling algorithm is used (see L<"ALGORITHMS">), this will
 automatically encode the member files when saving the archive to disk.
 
+The resulting archive format will use the Line Feed character (C<\n>,
+C<\x0A>) at the ends of the lines, regardless of your host platform.
+
 Options include:
 
-  str checksum: The checksum algorithm to use. If not provided, the checksum
-                algorithm of the original archive is used (if applicable),
-                otherwise the default of "SHA1" is used.
+  str checksum:   The checksum algorithm to use. If not provided, the checksum
+                  algorithm of the original archive is used (if applicable),
+                  otherwise the default of "SHA1" is used.
+  bool signature: Use the signing features of the encryption algorithm to
+                  include a signature in the resulting archive. This option
+                  may only be used when the encryption algorithm provides the
+                  "signing" option.
+  bool encrypt:   Use the encryption features of your encryption algorithm. By
+                  default, encryption is used; however, if you use the signature
+                  option, then encryption is automatically turned off and you
+                  will need to explicitly define the "encrypt" option in this
+                  case.
 
 =cut
 
@@ -591,7 +642,7 @@ sub save {
 	my $fh;
 
 	# Write options.
-	my $algo = $opts{checksum} || $self->{checksum}->name() || "SHA1";
+	my $algo = $opts{checksum} || (defined $self->{checksum} ? $self->{checksum}->name() : "SHA1");
 
 	# Load the checksum handler to be sure we have it.
 	$self->_autoload_checksum($algo);
@@ -613,14 +664,24 @@ sub save {
 		return $self->error("$file: is a directory.");
 	}
 
+	# Encryption is on by default, unless signature is used.
+	if (!exists $opts{encrypt}) {
+		if ($opts{signature}) {
+			$opts{encrypt} = 0;
+		}
+		else {
+			$opts{encrypt} = 1;
+		}
+	}
+
 	# Write to a temp file first.
 	my ($th,$tempfile) = tempfile();
 	$self->d("Writing to temp file: $tempfile");
 
 	# Print the headers.
-	print {$th} "\n[header]\n";
+	print {$th} "\x0A[header]\x0A";
 	foreach my $key (keys %{$self->{headers}}) {
-		print {$th} "$key=$self->{headers}->{$key}\n";
+		print {$th} "$key=$self->{headers}->{$key}\x0A";
 	}
 
 	# File indexes for newly added files.
@@ -698,7 +759,7 @@ sub save {
 		my $fsize = length($slurp);
 
 		# Mangle the data?
-		if (defined $self->{algorithm}) {
+		if ($opts{encrypt} && defined $self->{algorithm}) {
 			$self->d("Encoding the data with " . $self->{algorithm}->name);
 			$slurp = $self->{algorithm}->encode($slurp);
 		}
@@ -738,7 +799,7 @@ sub save {
 		my $fsize = length($content);
 
 		# Mangle the data?
-		if (defined $self->{algorithm}) {
+		if ($opts{encrypt} && defined $self->{algorithm}) {
 			$self->d("Encoding the data with " . $self->{algorithm}->name);
 			$content = $self->{algorithm}->encode($content);
 		}
@@ -758,16 +819,38 @@ sub save {
 
 	# Write the file table.
 	foreach my $file (sort keys %{$self->{table}}) {
-		print {$th} "\n[file:$file]\n";
+		print {$th} "\x0A[file:$file]\x0A";
 		foreach my $key (sort keys %{$self->{table}->{$file}}) {
-			print {$th} "$key=$self->{table}->{$file}->{$key}\n";
+			print {$th} "$key=$self->{table}->{$file}->{$key}\x0A";
 		}
 	}
 
+	# Are we signing?
+	if ($opts{signature}) {
+		# Can our algorithm sign?
+		if (defined $self->{algorithm} && $self->{algorithm}->can_sign()) {
+			$self->d("Signing the file table...");
+
+			# Get the file table and sign it.
+			my $table = $self->file_table();
+			my $signature = encode_base64($self->{algorithm}->sign($table));
+			$self->custom_block("signature", $signature);
+		}
+		else {
+			warn "Unable to sign the file table: algorithm doesn't support signatures!";
+		}
+	}
+
+	# Write custom blocks.
+	foreach my $block (sort keys %{$self->{custom_block}}) {
+		print {$th} "\x0A[$block]\x0A"
+			. join("\x0A", @{$self->{custom_block}->{$block}}) . "\x0A";
+	}
+
 	# Write the contents.
-	print {$th} "\n[content]\n";
+	print {$th} "\x0A[content]\x0A";
 	foreach my $add (@newfiles) {
-		print {$th} "$add\n";
+		print {$th} "$add\x0A";
 	}
 
 	# Generate the checksum.
@@ -780,7 +863,7 @@ sub save {
 		open ($fh, ">", $file) or return $self->error("$file: couldn't open file for writing: $@");
 	}
 	seek($th, 0, 0);
-	print {$fh} join(":", "TYD2", $algo, $hash), "\n";
+	print {$fh} join(":", "TYD2", $algo, $hash), "\x0A";
 	while (<$th>) {
 		print {$fh} $_;
 	}
@@ -790,6 +873,103 @@ sub save {
 	close ($fh);
 
 	return 1;
+}
+
+=head2 bool verify ([string membername])
+
+Verify the integrity of the archive or a member file in the archive.
+
+If the archive is signed (e.g. has a C<signature> custom block), the signature
+will be verified using the encryption algorithm that the file is using.
+
+If given a specific file name, the checksum of the file will be verified.
+
+This method doesn't verify the checksum of the I<archive file> itself; this was
+taken care of on the call to C<load()>.
+
+If any verification fails, this method returns undef and the error description
+is available from C<error()>. Otherwise, this returns 1.
+
+=cut
+
+sub verify {
+	my ($self, $file) = @_;
+
+	# Are we verifying an individual file?
+	if (defined $file) {
+		# Get its data.
+		if (!exists $self->{table}->{$file}) {
+			return $self->error("$file: not found in file table.");
+		}
+
+		$self->d("Verify member file: $file");
+		my $checksum = $self->{table}->{$file}->{checksum};
+		my $data     = $self->cat($file);
+		
+		# Validate.
+		if ($self->{checksum}->verify($checksum, $data)) {
+			return 1;
+		}
+		else {
+			return $self->error("$file: checksum verification has failed.");
+		}
+	}
+
+	# We're verifying the entire archive. Is there a signature block?
+	if (my $signature = $self->custom_block("signature")) {
+		$self->d("Verify signature on archive.");
+		if (defined $self->{algorithm} && $self->{algorithm}->can_sign()) {
+			# Verify it.
+			my $table = $self->file_table();
+			if ($self->{algorithm}->verify(decode_base64($signature), $table)) {
+				return 1;
+			}
+			else {
+				return $self->error("Signature check has failed.");
+			}
+		}
+		else {
+			return $self->error("The algorithm in use doesn't support signatures.");
+		}
+	}
+
+	# Verify the integrity of each member file.
+	foreach my $file (keys %{$self->{table}}) {
+		my $ok = $self->verify($file);
+		if (!$ok) {
+			return undef;
+		}
+	}
+
+	return 1;
+}
+
+=head2 string file_table ()
+
+Retrieve the file table as a string. This returns the file table in a consistent
+way (sorted alphabetically, etc.) which also includes their index numbers.
+
+This method is useful for signing algorithms that wish to create a signature
+based on the file table (which will be quicker to compute for large archives
+than a signature based on the file data).
+
+The string returned from this method will always use the Line Feed character
+(C<\n>, C<\x0A>) to separate the lines, regardless of your host platform.
+
+=cut
+
+sub file_table {
+	my $self = shift;
+
+	my @lines;
+	foreach my $file (sort keys %{$self->{table}}) {
+		push (@lines, "[file:$file]");
+		foreach my $key (sort keys %{$self->{table}->{$file}}) {
+			push (@lines, "$key=$self->{table}->{$file}->{$key}");
+		}
+	}
+
+	return join("\x0A", @lines);
 }
 
 =head2 string error ()

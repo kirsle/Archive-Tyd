@@ -28,6 +28,16 @@ a Tyd archive.
 This should return the name of the encryption algorithm, preferrably the fully
 qualified package name (for ex. C<Archive::Tyd::Algorithm::Deflate>).
 
+=head2 string provides ()
+
+This should return a list of services provided by the algorithm. Currently the
+following services are supported:
+
+  encoding: The algorithm simply mangles data (this is useful for symmetric
+            key encryption or compression algorithms).
+  signing:  This algorithm supports signatures (for example RSA)
+  pubkey:   This algorithm supports public key cryptography (for example RSA).
+
 =head2 void init (args)
 
 If your algorithm requires any initialization (for example, providing of an
@@ -42,6 +52,16 @@ version. This version should be the compressed or encrypted output.
 =head2 bin decode (bin encoded)
 
 Given the encoded data, decode it and return the original data.
+
+=head2 bin sign (bin data)
+
+Create a signature for the given data. This is only applicable to algorithms
+that provide signing.
+
+=head2 bool verify (big signature, bin data)
+
+Verify the signature for the given data. This is only applicable to algorithms
+that provide signing.
 
 =head1 SEE ALSO
 
@@ -62,9 +82,18 @@ sub new {
 	return $self;
 }
 
+# Internal use: querying methods.
+sub can_sign {
+	my $self = shift;
+	return grep { /^signing$/ } $self->provides();
+}
+
 # You must override these!
 sub init {}
+sub provides { return (); }
 sub encode { ... }
 sub decode { ... }
+sub sign { ... }
+sub verify { ... }
 
 1;

@@ -14,6 +14,10 @@ sub name {
 	return __PACKAGE__;
 }
 
+sub provides {
+	return ("encoding");
+}
+
 sub init {
 	my ($self, @args) = @_;
 
