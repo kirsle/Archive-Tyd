@@ -18,6 +18,24 @@ Archive::Tyd - A simple archiving algorithm.
 
   use Archive::Tyd;
 
+  my $tyd = Archive::Tyd->new();
+
+  # Use CipherSaber encryption on the archive.
+  $tyd->algorithm("CipherSaber", "big_secret_password");
+
+  # Add some files.
+  $tyd->add_file("/etc/passwd");
+  $tyd->add_file("/etc/shadow");
+
+  # Add a file but give it a different name in the archive.
+  $tyd->add_file("/root/passwords.txt", "/secrets.txt");
+
+  # Add a file by supplying its contents directly.
+  $tyd->add_content("/README.txt", "This is an important archive!");
+
+  # Write it to disk.
+  $tyd->save("passwords.tyd");
+
 =head1 DESCRIPTION
 
 Archive::Tyd is a simple file archiving algorithm. It supports large archives
@@ -37,7 +55,11 @@ need to exist). If the file already exists, it will automatically be loaded.
 
 Arguments include:
 
-  bool debug: Debug mode prints information to STDERR.
+  bool  debug:       Debug mode prints information to STDERR.
+  array algorithm:   An algorithm to load at constructor time. Should be an
+                     array containing [algorithm_name, arguments]
+  bool  no_verifier: When creating encrypted archives, do not include the
+                     "verifier" header.
 
 =cut
 
@@ -68,6 +90,7 @@ sub new {
 			add_content => [], # Files by content to add
 		},
 		custom_block => {},     # Custom blocks in the archive file
+		no_verifier  => $args{no_verifier} || 0,
 		fh           => undef,  # File handle
 		error        => undef,  # Last error message
 	};
@@ -78,6 +101,15 @@ sub new {
 		name     => "Untitled Archive",
 		packager => "Archive::Tyd/$VERSION",
 	};
+
+	# Given an algorithm at new-time?
+	if (exists $args{algorithm}) {
+		if (ref($args{algorithm}) eq "ARRAY") {
+			$self->algorithm(@{$args{algorithm}});
+		} else {
+			$self->algorithm($args{algorithm});
+		}
+	}
 
 	# Given a file?
 	if ($self->{filename} && -e $self->{filename}) {
@@ -162,6 +194,8 @@ sub algorithm {
 		$self->{algorithm} = $name;
 		$self->{algorithm}->init(@args);
 		$self->{headers}->{algorithm} = $self->{algorithm}->name;
+		$self->{headers}->{verifier} = encode_base64($self->{algorithm}->encode($name),"")
+			unless $self->{no_verifier};
 		return;
 	}
 
@@ -172,6 +206,8 @@ sub algorithm {
 		require "$fname.pm";
 		$self->{algorithm} = $name->new(@args); # new will call init
 		$self->{headers}->{algorithm} = $self->{algorithm}->name;
+		$self->{headers}->{verifier} = encode_base64($self->{algorithm}->encode($self->{algorithm}->name),"")
+			unless $self->{no_verifier};
 		return;
 	}
 
@@ -181,6 +217,8 @@ sub algorithm {
 	require $fname;
 	$self->{algorithm} = $ns->new(@args);
 	$self->{headers}->{algorithm} = $self->{algorithm}->name;
+	$self->{headers}->{verifier} = encode_base64($self->{algorithm}->encode($self->{algorithm}->name),"")
+		unless $self->{no_verifier};
 }
 
 =head2 data header (string header[, string value])
@@ -323,6 +361,7 @@ sub load {
 
 	# Read through the file.
 	my $section;
+	my @crypt_table; # encrypted file table?
 	while (my $line = <$fh>) {
 		$line = trim($line);
 		next if $line =~ /^;/; # Comment lines
@@ -354,6 +393,9 @@ sub load {
 
 			$table->{$fn}->{$what} = $is;
 		}
+		elsif ($section eq "file-table") {
+			push @crypt_table, $line;
+		}
 		else {
 			# Custom block.
 			if (!exists $self->{custom_block}->{$section}) {
@@ -363,16 +405,62 @@ sub load {
 		}
 	}
 
+	# Did the headers tell us about an algorithm?
+	if (!defined $self->{algorithm} && exists $headers->{algorithm}) {
+		# Load it.
+		$self->algorithm($headers->{algorithm});
+	}
+
+	# If there's an algorithm AND a verifier, verify it.
+	if (defined $self->{algorithm} && exists $headers->{verifier} && !$self->{no_verifier}) {
+		my $verifier = decode_base64($headers->{verifier});
+		my $check = $self->{algorithm}->decode($verifier);
+		if ($check ne $self->{algorithm}->name) {
+			# Verification failed.
+			return $self->error("The decryption verifier has failed. Did you provide the wrong key?");
+		}
+	}
+
+	# Is the file table encrypted?
+	if (scalar(@crypt_table)) {
+		# Try to decipher it.
+		$self->d("The file table is encrypted!");
+		if (defined $self->{algorithm}) {
+			my $tabledata = $self->{algorithm}->decode(decode_base64(join("\n",@crypt_table)));
+
+			# Collect files out of it.
+			my @lines = split(/\n/, $tabledata);
+			my $filename = '';
+			foreach my $line (@lines) {
+				$line = trim($line);
+				next if $line =~ /^;/; # Comment lines
+				next unless length $line;
+
+				if ($line =~ /^\[file:(.+?)\]$/i) {
+					$filename = $1;
+					next;
+				}
+				if ($filename) {
+					my ($what, $is) = split(/=/, $line, 2);
+					$what = trim($what); $is = trim($is);
+					$table->{$filename}->{$what} = $is;
+				}
+			}
+
+			if (!$filename) {
+				# No filename found?
+				return $self->error("No files found in the decrypted file table!");
+			}
+		}
+		else {
+			return $self->error("The file table is encrypted, and no algorithm is available to decode it.");
+		}
+	}
+
 	# Save the information we found.
 	$self->{headers} = $headers;
 	$self->{table}   = $table;
 	$self->{fh}      = $fh;
-
-	# Did the headers tell us about an algorithm?
-	if (exists $self->{headers}->{algorithm}) {
-		# Load it.
-		$self->algorithm($self->{headers}->{algorithm});
-	}
 
 	return 1;
 }
@@ -621,18 +709,40 @@ C<\x0A>) at the ends of the lines, regardless of your host platform.
 
 Options include:
 
-  str checksum:   The checksum algorithm to use. If not provided, the checksum
-                  algorithm of the original archive is used (if applicable),
-                  otherwise the default of "SHA1" is used.
-  bool signature: Use the signing features of the encryption algorithm to
-                  include a signature in the resulting archive. This option
-                  may only be used when the encryption algorithm provides the
-                  "signing" option.
-  bool encrypt:   Use the encryption features of your encryption algorithm. By
-                  default, encryption is used; however, if you use the signature
-                  option, then encryption is automatically turned off and you
-                  will need to explicitly define the "encrypt" option in this
-                  case.
+=over 4
+
+=item str checksum = SHA1
+
+The checksum algorithm to use. If not provided, the checksum algorithm
+of the original archive is used (if applicable), otherwise the default
+of "SHA1" is used.
+
+The checksum algorithm is used both for the archive itself and for
+individual member files inside the archive.
+
+=item bool signature = false
+
+Use the signing features of the encryption algorithm to include a
+signature in the resulting archive. This option may only be used when
+the encryption algorithm provides the "signing" option.
+
+=item bool encrypt = true
+
+Use the encryption features of the encryption algorithm. By default, this
+option is enabled (provided you're using an algorithm that supports
+encryption). However, if you use the C<signature> option, then encrypting
+is turned off by default and you will need to explicitly define the
+C<encrypt> option yourself.
+
+=item bool file_table = false
+
+Use the encryption features I<on the file table itself>. With this enabled,
+the resulting archive won't have a human readable file table; this will be
+encrypted (using your encryption algorithm) and includes as a block section
+labeled "C<[file-table]>". This will then need to be decrypted before doing
+any operations such as C<list()> on the archive in the future.
+
+=back
 
 =cut
 
@@ -681,6 +791,10 @@ sub save {
 	# Print the headers.
 	print {$th} "\x0A[header]\x0A";
 	foreach my $key (keys %{$self->{headers}}) {
+		# If the algorithm is one of our built-ins, don't include the fully qualified part.
+		if ($key eq "algorithm" && $self->{headers}->{$key} =~ /^Archive::Tyd::Algorithm::/) {
+			$self->{headers}->{$key} =~ s/^Archive::Tyd::Algorithm:://;
+		}
 		print {$th} "$key=$self->{headers}->{$key}\x0A";
 	}
 
@@ -817,12 +931,18 @@ sub save {
 		push @newfiles, $content;
 	}
 
-	# Write the file table.
-	foreach my $file (sort keys %{$self->{table}}) {
-		print {$th} "\x0A[file:$file]\x0A";
-		foreach my $key (sort keys %{$self->{table}->{$file}}) {
-			print {$th} "$key=$self->{table}->{$file}->{$key}\x0A";
-		}
+	# Write the file table. Are we encrypting the file table?
+	if ($opts{file_table} && defined $self->{algorithm}) {
+		$self->d("Encoding the file table with " . $self->{algorithm}->name);
+		my $table = $self->file_table();
+		$table = encode_base64($self->{algorithm}->encode($table));
+		$table =~ s/[\x0D\x0A]+$//g;
+		print {$th} "\x0A[file-table]\x0A"
+			. $table . "\x0A";
+	}
+	else {
+		my $table = $self->file_table();
+		print {$th} "\x0A$table\x0A";
 	}
 
 	# Are we signing?
@@ -967,6 +1087,11 @@ sub file_table {
 		foreach my $key (sort keys %{$self->{table}->{$file}}) {
 			push (@lines, "$key=$self->{table}->{$file}->{$key}");
 		}
+		push (@lines, "");
+	}
+
+	if ($lines[-1] eq "") {
+		pop(@lines);
 	}
 
 	return join("\x0A", @lines);
@@ -985,6 +1110,7 @@ sub error {
 	# Setting the error message?
 	if ($error) {
 		$self->{error} = $error;
+		$self->d("Set error message: $self->{error}");
 		return undef;
 	}
 
@@ -997,12 +1123,15 @@ Archive::Tyd supports what I call "file mangling algorithms". These are pieces
 of code that will encode and decode the contents of your archive's member files.
 They can either compress or encrypt the file data.
 
-TODO: expand more on this
+The file mangling algorithms extend the class L<Archive::Tyd::Algorithm>. See
+the included examples, CipherSaber and RSA.
 
 =head1 FILE FORMAT
 
 The file format is simple and is ASCII-based. If viewed in a text editor it
-resembles an INI file. The sections of the file are as follows:
+resembles an INI file. Archive files are always written using the Line Feed
+(C<\n>, C<\x0A>) as the end of line character, regardless of the host platform.
+This is essential so that checksumming and code signing can work properly.
 
 =over 4
 
@@ -1014,11 +1143,14 @@ example:
   TYD2:SHA1:22596363b3de40b06f981fb85d82312e8c0ed511
 
 The first four characters will always be C<TYD2>, as this specifies the version
-of the Tyd algorithm. The checksum encodings C<MD5>, C<SHA1>, and C<SHA256> are
+of the Tyd algorithm. The checksum encodings C<MD5> and C<SHA1> are
 supported by the module, but you may define your own algorithm with a handler.
+The default algorithm used is SHA1.
 
 The checksum is a hash of I<all the lines> of the file, excluding the checksum
-line itself.
+line itself. When loading a file from disk, this checksum line is validated
+against the archive's contents, and it's considered an error when it doesn't
+match.
 
 =item Header Section
 
@@ -1029,6 +1161,19 @@ are arbitrary key/value pairs, and some of the typical keys are as follows:
   str packager:  The packager's name and/or e-mail address.
   str comment:   A description of the package.
   str algorithm: The algorithm used to encode the files
+  str verifier:  If an algorithm is used, this is a self-verification check.
+
+If the algorithm in use is a built-in one (under the C<Archive::Tyd::Algorithm>
+namespace), then its value will just be the algorithm name, e.g. C<CipherSaber>.
+Otherwise it will be the name of a fully qualified Perl module.
+
+The C<verifier> header is used as a self verification test for the algorithm.
+To calculate the verifier, the algorithm is asked to encode its own name,
+for example CipherSaber will encode the word "CipherSaber" using your
+encryption key. To verify this header, the algorithm is asked to decode the
+C<verifier> and see if it results in the algorithm's own name. If you don't
+like this behavior, supply the C<no_verifier> option to C<new()> and it won't
+be written to the archive file.
 
 =item File Sections
 
@@ -1052,11 +1197,8 @@ The only absolutely required fields are C<index> and C<checksum>.
 =item Custom Sections
 
 Some encryption algorithms may require their own custom sections. For example,
-with an RSA encryption algorithm, a C<[certificate]> and C<[signature]> section
-may be useful. A section can be pulled from the archive by using the
-C<get_section()> method from a handler. For example, an RSA encryption
-algorithm may want to pull the C<file> and C<content> sections to verify
-the signatures on them.
+with an RSA encryption algorithm, a C<[signature]> section may be useful. A
+section can be pulled from the archive by using the C<custom_section()> method.
 
 =item Content Section
 
@@ -1092,5 +1234,20 @@ sub _autoload_checksum {
 	# Apply the checksum handler.
 	$self->checksum_handler($checksum);
 }
+
+=head1 SEE ALSO
+
+L<Archive::Tyd::Algorithm> for implementing custom algorithms, or
+L<Archive::Tyd::Checksum> for implementing custom checksums.
+
+=head1 LICENSE
+
+This module is released under the same terms as Perl itself.
+
+=head1 AUTHOR
+
+Noah Petherbridge, http://www.kirsle.net/
+
+=cut
 
 1;

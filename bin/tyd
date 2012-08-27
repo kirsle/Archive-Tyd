@@ -17,6 +17,7 @@ my %o = (
 	cat       => 0,      # --cat
 	info      => 0,      # --i
 	verbose   => 0,      # -v
+	filetable => 0,      # --filetable
 	help      => 0,      # --help
 	algorithm => '',     # -A
 	checksum  => 'SHA1', # --checksum
@@ -33,6 +34,7 @@ GetOptions (
 	'algorithm|A=s' => \$o{algorithm},
 	'verbose|v'     => \$o{verbose},
 	'header|H=s'    => \@header,
+	'filetable'     => \$o{filetable},
 	'help|h|?'      => \$o{help},
 	'checksum=s'    => \$o{checksum},
 );
@@ -77,7 +79,10 @@ if ($o{create}) {
 		$tyd->add_file($f => $aname) or error($tyd->error);
 	}
 
-	$tyd->save($archive, checksum => $o{checksum}) or error($tyd->error);
+	$tyd->save($archive,
+		checksum   => $o{checksum},
+		file_table => $o{filetable},
+	) or error($tyd->error);
 }
 else {
 	# Everything else requires an existing Tyd archive.
@@ -112,7 +117,9 @@ else {
 		}
 
 		# Save the archive. Use its original checksum algorithm.
-		$tyd->save($archive) or error($tyd->error);
+		$tyd->save($archive,
+			file_table => $o{filetable},
+		) or error($tyd->error);
 	} elsif ($o{remove}) {
 		# Removing files from archive.
 		foreach my $f (@files) {
@@ -121,7 +128,9 @@ else {
 			$tyd->remove_file($aname) or error($tyd->error);
 		}
 
-		$tyd->save($archive);
+		$tyd->save($archive,
+			file_table => $o{filetable},
+		);
 	} elsif ($o{cat}) {
 		# Cat the files.
 		binmode(STDOUT); # Just in case.

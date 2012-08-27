@@ -1,0 +1,111 @@
+<?xml version="1.0" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Archive::Tyd::Algorithm - Base class for file mangling algorithms.</title>
+<link rel="stylesheet" href="pod.css" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link rev="made" href="mailto:root@localhost" />
+</head>
+
+<body>
+
+
+<!-- INDEX BEGIN -->
+<div name="index">
+<p><a name="__index__"></a></p>
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#description">DESCRIPTION</a></li>
+	<li><a href="#methods">METHODS</a></li>
+	<ul>
+
+		<li><a href="#string_name___">string name ()</a></li>
+		<li><a href="#string_provides___">string provides ()</a></li>
+		<li><a href="#void_init__args_">void init (args)</a></li>
+		<li><a href="#bin_encode__bin_file_contents_">bin encode (bin file_contents)</a></li>
+		<li><a href="#bin_decode__bin_encoded_">bin decode (bin encoded)</a></li>
+		<li><a href="#bin_sign__bin_data_">bin sign (bin data)</a></li>
+		<li><a href="#bool_verify__big_signature__bin_data_">bool verify (big signature, bin data)</a></li>
+	</ul>
+
+	<li><a href="#see_also">SEE ALSO</a></li>
+</ul>
+
+<hr name="index" />
+</div>
+<!-- INDEX END -->
+
+<p>
+</p>
+<h1><a name="name">NAME</a></h1>
+<p>Archive::Tyd::Algorithm - Base class for file mangling algorithms.</p>
+<p>
+</p>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<pre>
+  package Archive::Tyd::Algorithm::Deflate;
+  use base qw(Archive::Tyd::Algorithm);</pre>
+<p>
+</p>
+<hr />
+<h1><a name="description">DESCRIPTION</a></h1>
+<p>This is the base class for creating custom file mangling algorithms. These
+algorithms are intended for compression or encryption of the individual files in
+a Tyd archive.</p>
+<p>
+</p>
+<hr />
+<h1><a name="methods">METHODS</a></h1>
+<p>
+</p>
+<h2><a name="string_name___">string name ()</a></h2>
+<p>This should return the name of the encryption algorithm, preferrably the fully
+qualified package name (for ex. <code>Archive::Tyd::Algorithm::Deflate</code>).</p>
+<p>
+</p>
+<h2><a name="string_provides___">string provides ()</a></h2>
+<p>This should return a list of services provided by the algorithm. Currently the
+following services are supported:</p>
+<pre>
+  encoding: The algorithm simply mangles data (this is useful for symmetric
+            key encryption or compression algorithms).
+  signing:  This algorithm supports signatures (for example RSA)</pre>
+<p>
+</p>
+<h2><a name="void_init__args_">void init (args)</a></h2>
+<p>If your algorithm requires any initialization (for example, providing of an
+encryption key) it should handle it in this method. <code>args</code> is a list of
+arguments provided by the user when they request this algorithm.</p>
+<p>
+</p>
+<h2><a name="bin_encode__bin_file_contents_">bin encode (bin file_contents)</a></h2>
+<p>Given the <code>file_contents</code> as a scalar, encode it and return the encoded
+version. This version should be the compressed or encrypted output.</p>
+<p>
+</p>
+<h2><a name="bin_decode__bin_encoded_">bin decode (bin encoded)</a></h2>
+<p>Given the encoded data, decode it and return the original data.</p>
+<p>
+</p>
+<h2><a name="bin_sign__bin_data_">bin sign (bin data)</a></h2>
+<p>Create a signature for the given data. This is only applicable to algorithms
+that provide signing.</p>
+<p>
+</p>
+<h2><a name="bool_verify__big_signature__bin_data_">bool verify (big signature, bin data)</a></h2>
+<p>Verify the signature for the given data. This is only applicable to algorithms
+that provide signing.</p>
+<p>
+</p>
+<hr />
+<h1><a name="see_also">SEE ALSO</a></h1>
+<p><a href="/Archive/Tyd.html">the Archive::Tyd manpage</a></p>
+
+</body>
+
+</html>

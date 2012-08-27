@@ -36,7 +36,6 @@ following services are supported:
   encoding: The algorithm simply mangles data (this is useful for symmetric
             key encryption or compression algorithms).
   signing:  This algorithm supports signatures (for example RSA)
-  pubkey:   This algorithm supports public key cryptography (for example RSA).
 
 =head2 void init (args)
 

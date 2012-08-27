@@ -1,0 +1,81 @@
+<?xml version="1.0" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Archive::Tyd::Checksum - Base class for checksum handlers.</title>
+<link rel="stylesheet" href="pod.css" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link rev="made" href="mailto:root@localhost" />
+</head>
+
+<body>
+
+
+<!-- INDEX BEGIN -->
+<div name="index">
+<p><a name="__index__"></a></p>
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#description">DESCRIPTION</a></li>
+	<li><a href="#methods">METHODS</a></li>
+	<ul>
+
+		<li><a href="#string_name___">string name ()</a></li>
+		<li><a href="#string_digest__filehandle_">string digest (filehandle)</a></li>
+		<li><a href="#bool_verify__string_hash__filehandle_">bool verify (string hash, filehandle)</a></li>
+	</ul>
+
+	<li><a href="#see_also">SEE ALSO</a></li>
+</ul>
+
+<hr name="index" />
+</div>
+<!-- INDEX END -->
+
+<p>
+</p>
+<h1><a name="name">NAME</a></h1>
+<p>Archive::Tyd::Checksum - Base class for checksum handlers.</p>
+<p>
+</p>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<pre>
+  package Archive::Tyd::Checksum::MyChecksum;
+  use base qw(Archive::Tyd::Checksum);</pre>
+<p>
+</p>
+<hr />
+<h1><a name="description">DESCRIPTION</a></h1>
+<p>This is the base class for checksum handlers for <a href="/Archive/Tyd.html">the Archive::Tyd manpage</a>. Checksums are
+used for verifying the integrity of a Tyd archive or for individual members of
+the archive.</p>
+<p>
+</p>
+<hr />
+<h1><a name="methods">METHODS</a></h1>
+<p>You must override the following methods.</p>
+<p>
+</p>
+<h2><a name="string_name___">string name ()</a></h2>
+<p>This should return the algorithm's name, e.g. <code>SHA1</code>.</p>
+<p>
+</p>
+<h2><a name="string_digest__filehandle_">string digest (filehandle)</a></h2>
+<p>This should take a file handle and return a checksum hash based on it.</p>
+<p>
+</p>
+<h2><a name="bool_verify__string_hash__filehandle_">bool verify (string hash, filehandle)</a></h2>
+<p>Verify that the given hash is the correct checksum for the file handle.</p>
+<p>
+</p>
+<hr />
+<h1><a name="see_also">SEE ALSO</a></h1>
+<p><a href="/Archive/Tyd.html">the Archive::Tyd manpage</a></p>
+
+</body>
+
+</html>

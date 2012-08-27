@@ -1,0 +1,391 @@
+<?xml version="1.0" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Archive::Tyd - A simple archiving algorithm.</title>
+<link rel="stylesheet" href="pod.css" type="text/css" />
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link rev="made" href="mailto:root@localhost" />
+</head>
+
+<body>
+
+
+<!-- INDEX BEGIN -->
+<div name="index">
+<p><a name="__index__"></a></p>
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#description">DESCRIPTION</a></li>
+	<li><a href="#methods">METHODS</a></li>
+	<ul>
+
+		<li><a href="#new___string_filename____hash_args__">new ([string filename], [hash args])</a></li>
+		<li><a href="#void_checksum_handler__algorithm_">void checksum_handler (algorithm)</a></li>
+		<li><a href="#void_algorithm__algorithm___args_____">void algorithm (algorithm[, args...])</a></li>
+		<li><a href="#data_header__string_header___string_value__">data header (string header[, string value])</a></li>
+		<li><a href="#hashref_headers___">hashref headers ()</a></li>
+		<li><a href="#string_custom_block__string_block_name___string_value__">string custom_block (string block_name[, string value])</a></li>
+		<li><a href="#bool_load___string_filename____filehandle_fh__">bool load ([string filename || filehandle fh])</a></li>
+		<li><a href="#bool_add_content__string_filename____bin_content______">bool add_content (string filename =&gt; bin content, ...)</a></li>
+		<li><a href="#bool_add_file__string_filename____string_archivename______">bool add_file (string filename =&gt; string archivename, ...)</a></li>
+		<li><a href="#int_remove_file__string_archivename______">int remove_file (string archivename, ...)</a></li>
+		<li><a href="#array_list___">array list ()</a></li>
+		<li><a href="#bool_extract___string_file____string_filepath__">bool extract ([string file =&gt; string filepath])</a></li>
+		<li><a href="#data_cat__string_file_">data cat (string file)</a></li>
+		<li><a href="#bool_save___string_filename____filehandle_fh____hash_options__">bool save ([string filename || filehandle fh][, hash options])</a></li>
+		<li><a href="#bool_verify___string_membername__">bool verify ([string membername])</a></li>
+		<li><a href="#string_file_table___">string file_table ()</a></li>
+		<li><a href="#string_error___">string error ()</a></li>
+	</ul>
+
+	<li><a href="#algorithms">ALGORITHMS</a></li>
+	<li><a href="#file_format">FILE FORMAT</a></li>
+	<li><a href="#see_also">SEE ALSO</a></li>
+	<li><a href="#license">LICENSE</a></li>
+	<li><a href="#author">AUTHOR</a></li>
+</ul>
+
+<hr name="index" />
+</div>
+<!-- INDEX END -->
+
+<p>
+</p>
+<h1><a name="name">NAME</a></h1>
+<p>Archive::Tyd - A simple archiving algorithm.</p>
+<p>
+</p>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<pre>
+  use Archive::Tyd;</pre>
+<pre>
+  my $tyd = Archive::Tyd-&gt;new();</pre>
+<pre>
+  # Use CipherSaber encryption on the archive.
+  $tyd-&gt;algorithm(&quot;CipherSaber&quot;, &quot;big_secret_password&quot;);</pre>
+<pre>
+  # Add some files.
+  $tyd-&gt;add_file(&quot;/etc/passwd&quot;);
+  $tyd-&gt;add_file(&quot;/etc/shadow&quot;);</pre>
+<pre>
+  # Add a file but give it a different name in the archive.
+  $tyd-&gt;add_file(&quot;/root/passwords.txt&quot;, &quot;/secrets.txt&quot;);</pre>
+<pre>
+  # Add a file by supplying its contents directly.
+  $tyd-&gt;add_content(&quot;/README.txt&quot;, &quot;This is an important archive!&quot;);</pre>
+<pre>
+  # Write it to disk.
+  $tyd-&gt;save(&quot;passwords.tyd&quot;);</pre>
+<p>
+</p>
+<hr />
+<h1><a name="description">DESCRIPTION</a></h1>
+<p>Archive::Tyd is a simple file archiving algorithm. It supports large archives
+(with many files) but not large individual files (subject to the memory
+limitations of your system).</p>
+<p>Tyd is a simple ASCII-based archive, where the contents of the files are base64
+encoded on one line each. It supports various encryption algorithms as well.</p>
+<p>
+</p>
+<hr />
+<h1><a name="methods">METHODS</a></h1>
+<p>
+</p>
+<h2><a name="new___string_filename____hash_args__">new ([string filename], [hash args])</a></h2>
+<p>Create a new Tyd object. If an odd number of arguments are given, the first one
+should be the file name of the archive you're working with (the file doesn't
+need to exist). If the file already exists, it will automatically be loaded.</p>
+<p>Arguments include:</p>
+<pre>
+  bool  debug:       Debug mode prints information to STDERR.
+  array algorithm:   An algorithm to load at constructor time. Should be an
+                     array containing [algorithm_name, arguments]
+  bool  no_verifier: When creating encrypted archives, do not include the
+                     &quot;verifier&quot; header.</pre>
+<p>
+</p>
+<h2><a name="void_checksum_handler__algorithm_">void checksum_handler (algorithm)</a></h2>
+<p>Load an algorithm for Archive::Tyd to use for calculating checksums. See
+<a href="#checksums">CHECKSUMS</a>. Here, <code>algorithm</code> should either be the name of a checksum
+algorithm, or a new instance of an algorithm handler (one that extends
+<a href="/Archive/Tyd/Checksum.html">the Archive::Tyd::Checksum manpage</a>).</p>
+<p>If the algorithm provided is a string and it doesn't contain the characters
+<code>::</code> anywhere, it will be assumed to be a built in algorithm under the
+<code>Archive::Tyd::Checksum::</code> namespace. Otherwise, you should provide the name
+of a Perl package.</p>
+<p>
+</p>
+<h2><a name="void_algorithm__algorithm___args_____">void algorithm (algorithm[, args...])</a></h2>
+<p>Load an algorithm for Archive::Tyd to use for encoding and decoding the members.
+See <a href="#algorithms">ALGORITHMS</a>. Here, <code>algorithm</code> should either be the name of an
+algorithm, or a new instance of an algorithm handler (one that extends
+<a href="/Archive/Tyd/Algorithm.html">the Archive::Tyd::Algorithm manpage</a>).</p>
+<p>If the algorithm provided is a string and it doesn't contain the characters
+<code>::</code> anywhere, it will be assumed to be a built in algorithm under the
+<code>Archive::Tyd::Algorithm::</code> namespace. Otherwise, you should provide the name
+of a Perl package.</p>
+<p>The algorithm object will be created and given the additional <code>args</code> provided
+here.</p>
+<p>
+</p>
+<h2><a name="data_header__string_header___string_value__">data header (string header[, string value])</a></h2>
+<p>Get or set a header on the archive. Standard headers include <code>name</code>,
+<code>packager</code>, and <code>algorithm</code> (but you should use <code>algorithm()</code> to change
+that header to make sure the algorithm handler gets loaded).</p>
+<p>
+</p>
+<h2><a name="hashref_headers___">hashref headers ()</a></h2>
+<p>Retrieve all the headers from the archive.</p>
+<p>
+</p>
+<h2><a name="string_custom_block__string_block_name___string_value__">string custom_block (string block_name[, string value])</a></h2>
+<p>Get or set the value of a custom block from the archive. Custom blocks are
+useful for including a signature in the archive. They can include any
+arbitrary data.</p>
+<p>You cannot set a block named <code>header</code>, <code>content</code>, or any block that begins
+with the word <code>file:</code>.</p>
+<p>
+</p>
+<h2><a name="bool_load___string_filename____filehandle_fh__">bool load ([string filename || filehandle fh])</a></h2>
+<p>Load a Tyd archive from a file or filehandle. If you specified an existing
+file when you called <code>new()</code>, the file will automatically be opened.</p>
+<p>If the archive was saved using a file mangling algorithm, it will be identified
+and initialized automatically.</p>
+<p>TODO: add some kind of a handler for when an algo requires more info and it
+wasn't provided by algorithm()?</p>
+<p>
+</p>
+<h2><a name="bool_add_content__string_filename____bin_content______">bool add_content (string filename =&gt; bin content, ...)</a></h2>
+<p>Add a file to the archive by specifying the contents directly. <code>filename</code> is
+the file path for the file to be added, beginning with <code>/</code> for the root of
+the archive (for example, <code>/README.txt</code>). <code>content</code> is the file's contents.</p>
+<p>Multiple files may be added with one call.</p>
+<p>Note that files added this way are put into a queue of pending changes to the
+archive, and thus will be kept in memory until the archive is written.</p>
+<p>
+</p>
+<h2><a name="bool_add_file__string_filename____string_archivename______">bool add_file (string filename =&gt; string archivename, ...)</a></h2>
+<p>Add an existing file to the archive by name. The file is added to a queue
+to be written next time the archive is saved.</p>
+<p>If you only pass a single argument, it will get the same name in the
+archive. Otherwise pass a key/value pair of the file name on disk and
+its filename in the archive (in the archive, the filename must begin
+with a /).</p>
+<p>Multiple files may be added at a time, but they must be passed in hash
+format in this case.</p>
+<p>
+</p>
+<h2><a name="int_remove_file__string_archivename______">int remove_file (string archivename, ...)</a></h2>
+<p>Remove files from the archive. The files are added to a queue to be removed the
+next time the archive is saved. Pass in a list of multiple files to delete many
+with one call.</p>
+<p>Returns the number of files that were removed (so, for example, if you provide a
+file name that doesn't exist in the archive, this will return less than the
+number of files given). An undef return value indicates an error.</p>
+<p>
+</p>
+<h2><a name="array_list___">array list ()</a></h2>
+<p>List all the files within the archive. Doesn't include pending files.</p>
+<p>
+</p>
+<h2><a name="bool_extract___string_file____string_filepath__">bool extract ([string file =&gt; string filepath])</a></h2>
+<p>Extract files from the archive. If given an odd number of arguments, it will
+extract just the file mentioned and give it the same file path on disk,
+relative to the current working directory. Otherwise, provide a hash of
+key/value pairs to map the files in the archive to files on the disk.</p>
+<p>If given no arguments at all, all files will be extracted relative to the
+current working directory.</p>
+<p>
+</p>
+<h2><a name="data_cat__string_file_">data cat (string file)</a></h2>
+<p>Slurp the data from a file that exists in the archive. This doesn't work for
+pending files. If a file mangling algorithm is used (see <a href="#algorithms">ALGORITHMS</a>), this
+method will automatically decode it for you.</p>
+<p>
+</p>
+<h2><a name="bool_save___string_filename____filehandle_fh____hash_options__">bool save ([string filename || filehandle fh][, hash options])</a></h2>
+<p>Write the changes back to the archive. This will flush all pending writes,
+call any event handlers for encryption of file contents, etc.</p>
+<p>If a file mangling algorithm is used (see <a href="#algorithms">ALGORITHMS</a>), this will
+automatically encode the member files when saving the archive to disk.</p>
+<p>The resulting archive format will use the Line Feed character (<code>\n</code>,
+<code>\x0A</code>) at the ends of the lines, regardless of your host platform.</p>
+<p>Options include:</p>
+<dl>
+<dt><strong><a name="str_checksum_sha1" class="item">str checksum = SHA1</a></strong></dt>
+
+<dd>
+<p>The checksum algorithm to use. If not provided, the checksum algorithm
+of the original archive is used (if applicable), otherwise the default
+of &quot;SHA1&quot; is used.</p>
+<p>The checksum algorithm is used both for the archive itself and for
+individual member files inside the archive.</p>
+</dd>
+<dt><strong><a name="bool_signature_false" class="item">bool signature = false</a></strong></dt>
+
+<dd>
+<p>Use the signing features of the encryption algorithm to include a
+signature in the resulting archive. This option may only be used when
+the encryption algorithm provides the &quot;signing&quot; option.</p>
+</dd>
+<dt><strong><a name="bool_encrypt_true" class="item">bool encrypt = true</a></strong></dt>
+
+<dd>
+<p>Use the encryption features of the encryption algorithm. By default, this
+option is enabled (provided you're using an algorithm that supports
+encryption). However, if you use the <code>signature</code> option, then encrypting
+is turned off by default and you will need to explicitly define the
+<code>encrypt</code> option yourself.</p>
+</dd>
+<dt><strong><a name="bool_file_table_false" class="item">bool file_table = false</a></strong></dt>
+
+<dd>
+<p>Use the encryption features <em>on the file table itself</em>. With this enabled,
+the resulting archive won't have a human readable file table; this will be
+encrypted (using your encryption algorithm) and includes as a block section
+labeled &quot;<code>[file-table]</code>&quot;. This will then need to be decrypted before doing
+any operations such as <code>list()</code> on the archive in the future.</p>
+</dd>
+</dl>
+<p>
+</p>
+<h2><a name="bool_verify___string_membername__">bool verify ([string membername])</a></h2>
+<p>Verify the integrity of the archive or a member file in the archive.</p>
+<p>If the archive is signed (e.g. has a <code>signature</code> custom block), the signature
+will be verified using the encryption algorithm that the file is using.</p>
+<p>If given a specific file name, the checksum of the file will be verified.</p>
+<p>This method doesn't verify the checksum of the <em>archive file</em> itself; this was
+taken care of on the call to <code>load()</code>.</p>
+<p>If any verification fails, this method returns undef and the error description
+is available from <code>error()</code>. Otherwise, this returns 1.</p>
+<p>
+</p>
+<h2><a name="string_file_table___">string file_table ()</a></h2>
+<p>Retrieve the file table as a string. This returns the file table in a consistent
+way (sorted alphabetically, etc.) which also includes their index numbers.</p>
+<p>This method is useful for signing algorithms that wish to create a signature
+based on the file table (which will be quicker to compute for large archives
+than a signature based on the file data).</p>
+<p>The string returned from this method will always use the Line Feed character
+(<code>\n</code>, <code>\x0A</code>) to separate the lines, regardless of your host platform.</p>
+<p>
+</p>
+<h2><a name="string_error___">string error ()</a></h2>
+<p>Retrieve the last error message given. When a function returns undefined, call
+<code>error()</code> to see what the reason was.</p>
+<p>
+</p>
+<hr />
+<h1><a name="algorithms">ALGORITHMS</a></h1>
+<p>Archive::Tyd supports what I call &quot;file mangling algorithms&quot;. These are pieces
+of code that will encode and decode the contents of your archive's member files.
+They can either compress or encrypt the file data.</p>
+<p>The file mangling algorithms extend the class <a href="/Archive/Tyd/Algorithm.html">the Archive::Tyd::Algorithm manpage</a>. See
+the included examples, CipherSaber and RSA.</p>
+<p>
+</p>
+<hr />
+<h1><a name="file_format">FILE FORMAT</a></h1>
+<p>The file format is simple and is ASCII-based. If viewed in a text editor it
+resembles an INI file. Archive files are always written using the Line Feed
+(<code>\n</code>, <code>\x0A</code>) as the end of line character, regardless of the host platform.
+This is essential so that checksumming and code signing can work properly.</p>
+<dl>
+<dt><strong><a name="checksum_line" class="item">Checksum Line</a></strong></dt>
+
+<dd>
+<p>The first line of the file is the checksum for the remainder of the file. An
+example:</p>
+<pre>
+  TYD2:SHA1:22596363b3de40b06f981fb85d82312e8c0ed511</pre>
+<p>The first four characters will always be <code>TYD2</code>, as this specifies the version
+of the Tyd algorithm. The checksum encodings <code>MD5</code> and <code>SHA1</code> are
+supported by the module, but you may define your own algorithm with a handler.
+The default algorithm used is SHA1.</p>
+<p>The checksum is a hash of <em>all the lines</em> of the file, excluding the checksum
+line itself. When loading a file from disk, this checksum line is validated
+against the archive's contents, and it's considered an error when it doesn't
+match.</p>
+</dd>
+<dt><strong><a name="header_section" class="item">Header Section</a></strong></dt>
+
+<dd>
+<p>The <code>[header]</code> section contains the header information for the archive. These
+are arbitrary key/value pairs, and some of the typical keys are as follows:</p>
+<pre>
+  str name:      A short name for the archive.
+  str packager:  The packager's name and/or e-mail address.
+  str comment:   A description of the package.
+  str algorithm: The algorithm used to encode the files
+  str verifier:  If an algorithm is used, this is a self-verification check.</pre>
+<p>If the algorithm in use is a built-in one (under the <code>Archive::Tyd::Algorithm</code>
+namespace), then its value will just be the algorithm name, e.g. <code>CipherSaber</code>.
+Otherwise it will be the name of a fully qualified Perl module.</p>
+<p>The <code>verifier</code> header is used as a self verification test for the algorithm.
+To calculate the verifier, the algorithm is asked to encode its own name,
+for example CipherSaber will encode the word &quot;CipherSaber&quot; using your
+encryption key. To verify this header, the algorithm is asked to decode the
+<code>verifier</code> and see if it results in the algorithm's own name. If you don't
+like this behavior, supply the <code>no_verifier</code> option to <code>new()</code> and it won't
+be written to the archive file.</p>
+</dd>
+<dt><strong><a name="file_sections" class="item">File Sections</a></strong></dt>
+
+<dd>
+<p>Each file in the archive will have its own section. The sections will be named
+like <code>[file:X]</code>, where X is the path to the file (for example, &quot;/README&quot; or
+&quot;/lib/Archive/Tyd.pm&quot;). In each section will be key/value pairs containing
+attributes of the file. These fields are arbitrary, but the following are
+typical:</p>
+<pre>
+  int index:    The line number in the [content] section for the file's contents
+  str checksum: A checksum line for the file (ex. MD5:...)
+  int atime:    Access time on the file.
+  int ctime:    Created time or changed time on the file.
+  int mtime:    Modified time on the file.
+  int chmod:    Chmod permissions on the file (for ex. 755).
+  int size:     Real file size (when extracted)
+  int asize:    Archive file size (size of [content] section)</pre>
+<p>The only absolutely required fields are <code>index</code> and <code>checksum</code>.</p>
+</dd>
+<dt><strong><a name="custom_sections" class="item">Custom Sections</a></strong></dt>
+
+<dd>
+<p>Some encryption algorithms may require their own custom sections. For example,
+with an RSA encryption algorithm, a <code>[signature]</code> section may be useful. A
+section can be pulled from the archive by using the <code>custom_section()</code> method.</p>
+</dd>
+<dt><strong><a name="content_section" class="item">Content Section</a></strong></dt>
+
+<dd>
+<p>The <code>[content]</code> section is where the contents of the files lie. This section
+can contain no blank lines. Each line will be a Base64 encoded string of the
+contents of one of the files in the archive. The line numbers are referred to
+by index from the File Sections.</p>
+</dd>
+</dl>
+<p>
+</p>
+<hr />
+<h1><a name="see_also">SEE ALSO</a></h1>
+<p><a href="/Archive/Tyd/Algorithm.html">the Archive::Tyd::Algorithm manpage</a> for implementing custom algorithms, or
+<a href="/Archive/Tyd/Checksum.html">the Archive::Tyd::Checksum manpage</a> for implementing custom checksums.</p>
+<p>
+</p>
+<hr />
+<h1><a name="license">LICENSE</a></h1>
+<p>This module is released under the same terms as Perl itself.</p>
+<p>
+</p>
+<hr />
+<h1><a name="author">AUTHOR</a></h1>
+<p>Noah Petherbridge, <a href="http://www.kirsle.net/">http://www.kirsle.net/</a></p>
+
+</body>
+
+</html>

@@ -70,12 +70,30 @@ sub verify {
 
 sub encode {
 	my ($self, $data) = @_;
-	return $self->{cs}->encrypt($data);
+
+	# We need the public key for this.
+	if (!defined $self->{keys}->{public}) {
+		die "Public key is required for RSA encryption!";
+	}
+
+	return $self->{rsa}->encrypt (
+		Message => $data,
+		Key     => $self->{keys}->{public},
+	);
 }
 
 sub decode {
 	my ($self, $data) = @_;
-	return $self->{cs}->decrypt($data);
+
+	# We need a private key for this.
+	if (!defined $self->{keys}->{private}) {
+		die "Private key is required for RSA decryption!";
+	}
+
+	return $self->{rsa}->decrypt (
+		Ciphertext => $data,
+		Key        => $self->{keys}->{private},
+	);
 }
 
 1;
